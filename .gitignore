@@ -1,0 +1,36 @@
+# Build outputs
+bin/
+obj/
+.vs/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+packages/
+
+# Secrets / local config
+*.env
+.env
+appsettings.Development.json
+
+# Large/generated assets if needed
+*.zip
+*.7z
+*.rar
