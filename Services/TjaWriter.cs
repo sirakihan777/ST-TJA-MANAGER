@@ -86,7 +86,7 @@ namespace ST_Fumen_Manager_WPF.Services
             var seenHeaderKeys = new HashSet<string>();
 
             var newLines = new List<string>();
-            bool isTargetBlock = false;
+            CourseData? currentCourse = null;
             bool inCommonHeader = true;
             bool insertedMissingHeader = false;
 
@@ -118,7 +118,14 @@ namespace ST_Fumen_Manager_WPF.Services
                         InsertMissingCommonHeaders();
                         inCommonHeader = false;
                     }
-                    isTargetBlock = string.Equals(courseMatch.Groups[1].Value.Trim(), targetCourseRaw, StringComparison.OrdinalIgnoreCase);
+                    string courseVal = courseMatch.Groups[1].Value.Trim();
+                    currentCourse = newData.Courses.FirstOrDefault(c => string.Equals(c.RawCourseVal, courseVal, StringComparison.OrdinalIgnoreCase) ||
+                                                                        string.Equals(c.CourseName, courseVal, StringComparison.OrdinalIgnoreCase));
+                    if (currentCourse == null && newData.Courses.Count > 0)
+                    {
+                        // 1つしかない場合等のフォールバック
+                        currentCourse = newData.Courses.FirstOrDefault();
+                    }
                     newLines.Add(line);
                     continue;
                 }
@@ -135,11 +142,12 @@ namespace ST_Fumen_Manager_WPF.Services
                     continue;
                 }
 
-                if (isTargetBlock && Regex.IsMatch(trimmed, @"(?i)^LEVEL\s*:"))
+                if (!inCommonHeader && Regex.IsMatch(trimmed, @"(?i)^LEVEL\s*:"))
                 {
-                    newLines.Add($"LEVEL:{newData.Level}");
+                    string targetLv = currentCourse?.Level ?? newData.Level;
+                    newLines.Add($"LEVEL:{targetLv}");
                 }
-                else if (isTargetBlock && Regex.IsMatch(trimmed, @"(?i)^MAKER\s*:"))
+                else if (!inCommonHeader && Regex.IsMatch(trimmed, @"(?i)^MAKER\s*:"))
                 {
                     string maker = (newData.Maker ?? "").Trim();
                     if (!string.IsNullOrEmpty(maker))

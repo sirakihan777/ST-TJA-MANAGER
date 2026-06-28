@@ -28,10 +28,18 @@ namespace ST_Fumen_Manager_WPF.Services
                     return new UTF8Encoding(true);
                 }
 
-                // Shift_JISとしてのデコードが可能か検証
-                var sjis = Encoding.GetEncoding("shift_jis");
-                string decoded = sjis.GetString(rawData);
-                return sjis;
+                // BOMなしUTF-8としての厳密デコード検証（例外を投げるデコーダ）
+                try
+                {
+                    var utf8Strict = new UTF8Encoding(false, true);
+                    utf8Strict.GetString(rawData);
+                    return new UTF8Encoding(false);
+                }
+                catch
+                {
+                    // UTF-8として無効なシーケンスがあれば Shift_JIS (CP932)
+                    return Encoding.GetEncoding("shift_jis");
+                }
             }
             catch
             {
@@ -46,7 +54,7 @@ namespace ST_Fumen_Manager_WPF.Services
             {
                 string content = File.ReadAllText(filePath, encoding);
 
-                string globalTitle = Path.GetFileName(filePath);
+                string globalTitle = Path.GetFileNameWithoutExtension(filePath);
                 var matchTitle = Regex.Match(content, @"(?i)^TITLE\s*:(.*)", RegexOptions.Multiline);
                 if (matchTitle.Success) globalTitle = matchTitle.Groups[1].Value.Trim();
 
@@ -70,6 +78,15 @@ namespace ST_Fumen_Manager_WPF.Services
                 var courseBlocks = Regex.Split(content, @"(?i)^COURSE\s*:", RegexOptions.Multiline);
                 if (courseBlocks.Length <= 1) return results;
 
+                var tjaItem = new CourseItem
+                {
+                    FilePath = filePath,
+                    Title = globalTitle,
+                    Subtitle = globalSub,
+                    Genre = globalGenre,
+                    Maker = globalMaker
+                };
+
                 for (int i = 1; i < courseBlocks.Length; i++)
                 {
                     string block = courseBlocks[i];
@@ -77,15 +94,10 @@ namespace ST_Fumen_Manager_WPF.Services
                     if (lines.Length == 0) continue;
 
                     string rawCourse = lines[0].Trim().ToLower();
-                    string courseName = CourseMapFromVal.TryGetValue(rawCourse, out var mapped) ? mapped : "Oni";
+                    string courseName = CourseMapFromVal.TryGetValue(rawCourse, out var mapped) ? mapped : rawCourse;
 
-                    var item = new CourseItem
+                    var cData = new CourseData
                     {
-                        FilePath = filePath,
-                        Title = globalTitle,
-                        Subtitle = globalSub,
-                        Genre = globalGenre,
-                        Maker = globalMaker,
                         CourseName = courseName,
                         RawCourseVal = rawCourse,
                         Level = "1",
@@ -98,13 +110,14 @@ namespace ST_Fumen_Manager_WPF.Services
                     {
                         string trimmed = line.Trim();
                         var matchLv = Regex.Match(trimmed, @"(?i)^LEVEL\s*:(.*)");
-                        if (matchLv.Success) item.Level = matchLv.Groups[1].Value.Trim();
+                        if (matchLv.Success) cData.Level = matchLv.Groups[1].Value.Trim();
 
+                        // ブロック内でもしTitle等があれば最初のコースのものまたは空でないものをグローバルに反映（補完）
                         var matchMk = Regex.Match(trimmed, @"(?i)^MAKER\s*:(.*)");
-                        if (matchMk.Success) item.Maker = matchMk.Groups[1].Value.Trim();
+                        if (matchMk.Success && string.IsNullOrEmpty(tjaItem.Maker)) tjaItem.Maker = matchMk.Groups[1].Value.Trim();
 
                         var matchTt = Regex.Match(trimmed, @"(?i)^TITLE\s*:(.*)");
-                        if (matchTt.Success) item.Title = matchTt.Groups[1].Value.Trim();
+                        if (matchTt.Success && string.IsNullOrEmpty(tjaItem.Title)) tjaItem.Title = matchTt.Groups[1].Value.Trim();
 
                         int commentIdx = trimmed.IndexOf("//");
                         string cleanLine = commentIdx >= 0 ? trimmed.Substring(0, commentIdx).Trim() : trimmed;
@@ -114,16 +127,22 @@ namespace ST_Fumen_Manager_WPF.Services
                         else if (inNotes && !cleanLine.StartsWith("#"))
                         {
                             string notesOnly = Regex.Replace(cleanLine, @"[^1234]", "");
-                            item.Combo += notesOnly.Length;
+                            cData.Combo += notesOnly.Length;
                         }
                     }
 
-                    results.Add(item);
+                    tjaItem.Courses.Add(cData);
+                }
+
+                if (tjaItem.Courses.Count > 0)
+                {
+                    tjaItem.SelectedCourse = tjaItem.Courses[0];
+                    results.Add(tjaItem);
                 }
             }
             catch
             {
-                // 解析エラー時は空または途中までの結果を返す
+                // 解析エラー時
             }
             return results;
         }
