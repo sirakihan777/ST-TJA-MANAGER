@@ -470,6 +470,156 @@
                     </Border>
                 </Grid>
             </TabItem>
+            <!-- Tab 3: 公式順STFDB生成 -->
+            <TabItem Header="公式順STFDB生成">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Row 0: Git / Database 操作ボタン -->
+                    <Border Grid.Row="0" Background="#2D2D30" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="BtnGitFetch" Content="📥 Git曲データ取得/更新" Click="BtnGitFetch_Click"
+                                    Margin="0,0,6,0" Padding="12,6"/>
+                            <Button x:Name="BtnGitCancel" Content="⏹ キャンセル" Click="BtnGitCancel_Click"
+                                    Style="{StaticResource RedButtonStyle}"
+                                    Margin="0,0,16,0" Padding="10,6"
+                                    IsEnabled="False"/>
+                            <Button x:Name="BtnDbFetch" Content="🌐 Database取得/更新" Click="BtnDbFetch_Click"
+                                    Margin="0,0,16,0" Padding="12,6"/>
+                            <TextBlock x:Name="TxtGitElapsed" VerticalAlignment="Center"
+                                       Foreground="#FFD700" FontSize="12" FontFamily="Consolas"
+                                       Margin="0,0,12,0"/>
+                            <TextBlock x:Name="TxtDbCacheInfo" VerticalAlignment="Center"
+                                       Foreground="#888888" FontSize="12"/>
+                        </StackPanel>
+                    </Border>
+
+
+                    <!-- Row 1: フォルダ選択 -->
+                    <Border Grid.Row="1" Background="#2D2D30" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="8"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- 曲データフォルダ -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="曲データフォルダ:" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" FontWeight="SemiBold"/>
+                            <TextBox x:Name="TxtSrcFolder" Grid.Row="0" Grid.Column="1"
+                                     IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                     Height="28"/>
+                            <Button Grid.Row="0" Grid.Column="2" Content="参照..." Click="BtnSrcBrowse_Click"
+                                    Padding="10,4"/>
+
+                            <!-- 出力Songsフォルダ -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="出力Songsフォルダ:" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" FontWeight="SemiBold"/>
+                            <TextBox x:Name="TxtDestFolder" Grid.Row="2" Grid.Column="1"
+                                     IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                     Height="28"/>
+                            <Button Grid.Row="2" Grid.Column="2" Content="参照..." Click="BtnDestBrowse_Click"
+                                    Padding="10,4"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Row 2: 操作ボタン + オプション -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="BtnPreview" Content="🔍 照合プレビュー" Click="BtnPreview_Click"
+                                Style="{StaticResource GreenButtonStyle}" Margin="0,0,8,0" Padding="14,7"/>
+                        <Button x:Name="BtnGenerate" Content="💾 official.stfdb生成" Click="BtnGenerate_Click"
+                                Margin="0,0,16,0" Padding="14,7"/>
+                        <CheckBox x:Name="ChkIncludeWarning" Content="Warningも出力する"
+                                  VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="TxtOfficialStatus" VerticalAlignment="Center"
+                                   Foreground="#A6A6A6" FontSize="12"/>
+                    </StackPanel>
+
+                    <!-- Row 3: ログ出力 (折りたたみ可) -->
+                    <Border Grid.Row="3" Background="#1A1A1A" CornerRadius="4" Padding="6" Margin="0,0,0,6"
+                            Height="80">
+                        <ScrollViewer x:Name="OfficialLogScroll" VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="TxtOfficialLog" TextWrapping="Wrap"
+                                       Foreground="#BBBBBB" FontSize="11"
+                                       FontFamily="Consolas, Lucida Console"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Row 4: 照合プレビュー DataGrid -->
+                    <Border Grid.Row="4" Background="#1E1E1E" CornerRadius="6" Padding="1">
+                        <DataGrid x:Name="OfficialPreviewGrid"
+                                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  SelectionMode="Single" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <!-- 状態 (色付き) -->
+                                <DataGridTemplateColumn Header="状態" Width="75">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding StatusText}" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusText}" Value="OK">
+                                                                <Setter Property="Foreground" Value="#2EA043"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusText}" Value="Warning">
+                                                                <Setter Property="Foreground" Value="#FFA500"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusText}" Value="Unmatched">
+                                                                <Setter Property="Foreground" Value="#FF5252"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusText}" Value="Duplicate">
+                                                                <Setter Property="Foreground" Value="#E040FB"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusText}" Value="Error">
+                                                                <Setter Property="Foreground" Value="#FF1744"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTextColumn Header="公式ジャンル" Binding="{Binding OfficialGenre}" Width="120" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="公式順" Binding="{Binding OfficialOrder}" Width="55" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="公式TITLE" Binding="{Binding OfficialTitle}" Width="180" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="公式SUBTITLE" Binding="{Binding OfficialSubtitle}" Width="130" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="TJA TITLE" Binding="{Binding TjaTitle}" Width="180" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="TJA SUBTITLE" Binding="{Binding TjaSubtitle}" Width="130" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="TJAパス" Binding="{Binding TjaPath}" Width="*" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="生成先STFDB" Binding="{Binding DestinationStfdb}" Width="180" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="マッチ方式" Binding="{Binding MatchMethodText}" Width="150" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="メッセージ" Binding="{Binding Message}" Width="200" IsReadOnly="True"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Row 5: サマリー -->
+                    <Border Grid.Row="5" Background="#252526" CornerRadius="4" Padding="8,4" Margin="0,4,0,0">
+                        <TextBlock x:Name="TxtOfficialSummary" Foreground="#888888" FontSize="12"
+                                   Text="照合プレビューを実行してください"/>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
     </Grid>
 </Window>
