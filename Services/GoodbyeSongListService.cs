@@ -19,6 +19,13 @@ namespace ST_Fumen_Manager_WPF.Services
     public static class GoodbyeSongListService
     {
         private const string GoodbyePageUrl = "https://wikiwiki.jp/taiko-fumen/%E4%BD%9C%E5%93%81/%E6%96%B0AC/%E3%82%B5%E3%83%A8%E3%83%8A%E3%83%A9%E6%9B%B2";
+        private const string GoodbyeAc15PageUrl = "https://wikiwiki.jp/taiko-fumen/%E4%BD%9C%E5%93%81/%E6%96%B0AC/%E3%82%B5%E3%83%A8%E3%83%8A%E3%83%A9%E6%9B%B2/AC15";
+
+        private static readonly string[] GoodbyePageUrls =
+        {
+            GoodbyePageUrl,
+            GoodbyeAc15PageUrl
+        };
 
         /// <summary>キャッシュ保存先: %APPDATA%\ST-TJA-MANAGER\Database\goodbye_songs.json</summary>
         public static string DatabasePath =>
@@ -40,6 +47,9 @@ namespace ST_Fumen_Manager_WPF.Services
             [JsonPropertyName("generated_at")]
             public string GeneratedAt { get; set; } = "";
 
+            [JsonPropertyName("source_urls")]
+            public List<string> SourceUrls { get; set; } = new();
+
             [JsonPropertyName("songs")]
             public List<GoodbyeSongRecord> Songs { get; set; } = new();
         }
@@ -51,30 +61,52 @@ namespace ST_Fumen_Manager_WPF.Services
             Action<string> log,
             CancellationToken ct = default)
         {
-            log?.Invoke($"[INFO] 取得中: サヨナラ曲 ({GoodbyePageUrl})");
+            var allSongs = new List<GoodbyeSongRecord>();
 
-            byte[] bytes;
-            try
+            foreach (var url in GoodbyePageUrls)
             {
-                bytes = await HttpClient.GetByteArrayAsync(GoodbyePageUrl, ct);
+                log?.Invoke($"[INFO] 取得中: サヨナラ曲 ({url})");
+
+                byte[] bytes;
+                try
+                {
+                    bytes = await HttpClient.GetByteArrayAsync(url, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    log?.Invoke("[INFO] キャンセルされました。");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"[ERROR] サヨナラ曲のダウンロードに失敗しました: {ex.Message}");
+                    continue;
+                }
+
+                string html;
+                try
+                {
+                    html = Encoding.UTF8.GetString(bytes);
+                }
+                catch
+                {
+                    html = Encoding.GetEncoding("shift_jis").GetString(bytes);
+                }
+
+                var pageSongs = ExtractSongs(html);
+                allSongs.AddRange(pageSongs);
+                log?.Invoke($"[OK] サヨナラ曲ページ: {pageSongs.Count} 曲");
+
+                await Task.Delay(300, ct);
             }
-            catch (Exception ex)
+
+            if (allSongs.Count == 0)
             {
-                log?.Invoke($"[ERROR] サヨナラ曲のダウンロードに失敗しました: {ex.Message}");
+                log?.Invoke("[ERROR] サヨナラ曲を取得できなかったため、既存Databaseは更新しません。");
                 return new List<GoodbyeSongRecord>();
             }
 
-            string html;
-            try
-            {
-                html = Encoding.UTF8.GetString(bytes);
-            }
-            catch
-            {
-                html = Encoding.GetEncoding("shift_jis").GetString(bytes);
-            }
-
-            var songs = ExtractSongs(html);
+            var songs = DeduplicateSongs(allSongs);
             SaveToCache(songs, log);
             log?.Invoke($"[OK] サヨナラ曲: {songs.Count} 曲");
             return songs;
@@ -115,6 +147,25 @@ namespace ST_Fumen_Manager_WPF.Services
             catch
             {
                 return null;
+            }
+        }
+
+        public static bool NeedsRefresh()
+        {
+            try
+            {
+                if (!File.Exists(DatabasePath)) return false;
+
+                string json = File.ReadAllText(DatabasePath, Encoding.UTF8);
+                var cache = JsonSerializer.Deserialize<GoodbyeSongCache>(json);
+                if (cache == null) return true;
+
+                var sources = new HashSet<string>(cache.SourceUrls, StringComparer.OrdinalIgnoreCase);
+                return GoodbyePageUrls.Any(url => !sources.Contains(url));
+            }
+            catch
+            {
+                return true;
             }
         }
 
@@ -255,6 +306,33 @@ namespace ST_Fumen_Manager_WPF.Services
             return songs;
         }
 
+        private static List<GoodbyeSongRecord> DeduplicateSongs(IEnumerable<GoodbyeSongRecord> songs)
+        {
+            var order = new List<string>();
+            var records = new Dictionary<string, GoodbyeSongRecord>(StringComparer.Ordinal);
+
+            foreach (var song in songs)
+            {
+                string key = $"{song.NormalizedTitle}|{song.NormalizedSubtitle}";
+                if (string.IsNullOrWhiteSpace(song.NormalizedTitle)) continue;
+
+                if (!records.ContainsKey(key))
+                {
+                    records[key] = song;
+                    order.Add(key);
+                    continue;
+                }
+
+                var existing = records[key];
+                if (string.IsNullOrWhiteSpace(existing.Genre) && !string.IsNullOrWhiteSpace(song.Genre))
+                {
+                    records[key] = song;
+                }
+            }
+
+            return order.Select(key => records[key]).ToList();
+        }
+
         private static string ExtractSubtitle(string titleCellHtml, string title)
         {
             var spanMatch = Regex.Match(titleCellHtml,
@@ -315,6 +393,7 @@ namespace ST_Fumen_Manager_WPF.Services
                 var cache = new GoodbyeSongCache
                 {
                     GeneratedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    SourceUrls = GoodbyePageUrls.ToList(),
                     Songs = songs
                 };
 

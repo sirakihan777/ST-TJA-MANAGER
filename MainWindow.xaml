@@ -484,20 +484,39 @@
 
                     <!-- Row 0: Git / Database 操作ボタン -->
                     <Border Grid.Row="0" Background="#2D2D30" CornerRadius="6" Padding="10" Margin="0,0,0,8">
-                        <StackPanel Orientation="Horizontal">
-                            <Button x:Name="BtnGitFetch" Content="📥 Git曲データ取得/更新" Click="BtnGitFetch_Click"
-                                    Margin="0,0,6,0" Padding="12,6"/>
-                            <Button x:Name="BtnGitCancel" Content="⏹ キャンセル" Click="BtnGitCancel_Click"
-                                    Style="{StaticResource RedButtonStyle}"
-                                    Margin="0,0,16,0" Padding="10,6"
-                                    IsEnabled="False"/>
-                            <Button x:Name="BtnDbFetch" Content="🌐 Database取得/更新" Click="BtnDbFetch_Click"
-                                    Margin="0,0,16,0" Padding="12,6"/>
-                            <TextBlock x:Name="TxtGitElapsed" VerticalAlignment="Center"
-                                       Foreground="#FFD700" FontSize="12" FontFamily="Consolas"
-                                       Margin="0,0,12,0"/>
-                            <TextBlock x:Name="TxtDbCacheInfo" VerticalAlignment="Center"
-                                       Foreground="#888888" FontSize="12"/>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="BtnGitFetch" Content="📥 Git曲データ取得/更新" Click="BtnGitFetch_Click"
+                                        Margin="0,0,6,0" Padding="12,6"/>
+                                <Button x:Name="BtnGitCancel" Content="⏹ キャンセル" Click="BtnGitCancel_Click"
+                                        Style="{StaticResource RedButtonStyle}"
+                                        Margin="0,0,16,0" Padding="10,6"
+                                        IsEnabled="False"/>
+                                <Button x:Name="BtnDbFetch" Content="🌐 Database取得/更新" Click="BtnDbFetch_Click"
+                                        Margin="0,0,16,0" Padding="12,6"/>
+                                <TextBlock x:Name="TxtGitElapsed" VerticalAlignment="Center"
+                                           Foreground="#FFD700" FontSize="12" FontFamily="Consolas"
+                                           Margin="0,0,12,0"/>
+                                <TextBlock x:Name="TxtDbCacheInfo" VerticalAlignment="Center"
+                                           Foreground="#888888" FontSize="12"/>
+                            </StackPanel>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Git取得先フォルダ:" VerticalAlignment="Center"
+                                           Margin="0,0,8,0" FontWeight="SemiBold"/>
+                                <TextBox x:Name="TxtGitCloneFolder" Grid.Column="1"
+                                         IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                         Height="28"/>
+                                <Button x:Name="BtnGitCloneFolderBrowse" Grid.Column="2" Content="参照..." Click="BtnGitCloneFolderBrowse_Click"
+                                        Margin="0,0,6,0" Padding="10,4"/>
+                                <Button x:Name="BtnGitCloneFolderDefault" Grid.Column="3" Content="既定" Click="BtnGitCloneFolderDefault_Click"
+                                        Padding="10,4"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -549,7 +568,7 @@
                                   VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
                         <CheckBox x:Name="ChkGenerateGoodbye" Content="サヨナラ曲フォルダも生成"
                                   VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
-                        <CheckBox x:Name="ChkGenerateConsumerCandidate" Content="CS版限定候補フォルダも生成"
+                        <CheckBox x:Name="ChkGenerateConsumerCandidate" Content="CS限定楽曲フォルダも生成"
                                   VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
                         <TextBlock x:Name="TxtOfficialStatus" VerticalAlignment="Center"
                                    Foreground="#A6A6A6" FontSize="12"/>
@@ -569,7 +588,7 @@
                     <Border Grid.Row="4" Background="#1E1E1E" CornerRadius="6" Padding="1">
                         <DataGrid x:Name="OfficialPreviewGrid"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
-                                  SelectionMode="Single" IsReadOnly="True">
+                                  SelectionMode="Single" IsReadOnly="False">
                             <DataGrid.Columns>
                                 <!-- 状態 (色付き) -->
                                 <DataGridTemplateColumn Header="状態" Width="75">
@@ -599,6 +618,20 @@
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="出力先" Width="105">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding OutputTargetOptions}"
+                                                      DisplayMemberPath="Label"
+                                                      SelectedValuePath="Value"
+                                                      SelectedValue="{Binding OutputTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEnabled="{Binding IsOutputTargetSelectable}"
+                                                      SelectionChanged="OfficialOutputTarget_SelectionChanged"
+                                                      MinWidth="92"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

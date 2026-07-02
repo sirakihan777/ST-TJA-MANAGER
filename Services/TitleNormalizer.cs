@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ST_Fumen_Manager_WPF.Services
 {
@@ -19,6 +20,10 @@ namespace ST_Fumen_Manager_WPF.Services
             "ALiVE",
             "ALIVE",
         };
+
+        private static readonly Regex OfficialVersionSuffixRegex = new(
+            @"\s*(?:[-‐‑‒–—―ー－]\s*)?(?:本家版|カバー版|Original\s*Version|Cover\s*Version|New\s*Audio|Old\s*Audio|Beena\s*Version|新曲|旧曲)\s*(?:[-‐‑‒–—―ー－]\s*)?$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>
         /// TITLEを正規化する。
@@ -64,6 +69,28 @@ namespace ST_Fumen_Manager_WPF.Services
                 sb.Append(work);
             }
             return preserveCase ? sb.ToString() : sb.ToString().ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// 公式曲との照合用に、末尾の音源・バージョン接尾辞を除去してからTITLEを正規化する。
+        /// 通常の NormalizeTitle はキャッシュ生成等でも使うため、挙動を分離する。
+        /// </summary>
+        public static string NormalizeTitleForOfficialMatch(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+
+            string work = s.Trim();
+            while (true)
+            {
+                string stripped = OfficialVersionSuffixRegex.Replace(work, "").Trim();
+                if (string.Equals(stripped, work, StringComparison.Ordinal))
+                    break;
+                if (string.IsNullOrWhiteSpace(stripped))
+                    break;
+                work = stripped;
+            }
+
+            return NormalizeTitle(work);
         }
 
         /// <summary>

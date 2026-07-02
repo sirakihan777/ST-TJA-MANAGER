@@ -40,6 +40,24 @@ namespace ST_Fumen_Manager_WPF.Models
     }
 
     /// <summary>
+    /// 照合候補を official.stfdb / 未分類のどちらへ出力するか。
+    /// </summary>
+    public enum OfficialOutputTarget
+    {
+        Official,
+        Unclassified
+    }
+
+    /// <summary>
+    /// WPF ComboBox 表示用の出力先選択肢。
+    /// </summary>
+    public class OfficialOutputTargetOption
+    {
+        public OfficialOutputTarget Value { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    /// <summary>
     /// 照合方式
     /// </summary>
     public enum MatchMethod
@@ -48,6 +66,10 @@ namespace ST_Fumen_Manager_WPF.Models
         ExactTitleNormalizedSubtitle,
         NormalizedTitleNormalizedSubtitle,
         NormalizedTitleEmptySubtitle,
+        OfficialVersionSuffix,
+        SwappedTitleSubtitle,
+        CombinedTitleSubtitle,
+        DoublePlaySet,
         LooseTitle,
         SubtitleMismatch,
         Unmatched,
@@ -62,10 +84,13 @@ namespace ST_Fumen_Manager_WPF.Models
     {
         private MatchStatus _status;
         private string _statusText = "";
+        private OfficialOutputTarget _outputTarget = OfficialOutputTarget.Unclassified;
 
         // --- 公式Database側 ---
         public string OfficialGenre { get; set; } = "";
         public int OfficialOrder { get; set; }
+        public int OfficialSortOrder { get; set; }
+        public int OfficialSortSubOrder { get; set; }
         public string OfficialTitle { get; set; } = "";
         public string OfficialSubtitle { get; set; } = "";
 
@@ -78,6 +103,19 @@ namespace ST_Fumen_Manager_WPF.Models
         public string DestinationStfdb { get; set; } = "";
         public string MatchMethodText { get; set; } = "";
         public string Message { get; set; } = "";
+        public string OfficialSongKey { get; set; } = "";
+        public string CandidateKey { get; set; } = "";
+        public int CandidateRank { get; set; }
+        public bool IsOutputTargetSelectable { get; set; } = true;
+
+        public static IReadOnlyList<OfficialOutputTargetOption> TargetOptions { get; } =
+            new List<OfficialOutputTargetOption>
+            {
+                new() { Value = OfficialOutputTarget.Official, Label = "公式" },
+                new() { Value = OfficialOutputTarget.Unclassified, Label = "10 未分類" },
+            };
+
+        public IReadOnlyList<OfficialOutputTargetOption> OutputTargetOptions => TargetOptions;
 
         // --- 分類結果 ---
         public string Classification { get; set; } = "";
@@ -100,6 +138,17 @@ namespace ST_Fumen_Manager_WPF.Models
         public string StatusText
         {
             get => _statusText;
+        }
+
+        public OfficialOutputTarget OutputTarget
+        {
+            get => _outputTarget;
+            set
+            {
+                if (_outputTarget == value) return;
+                _outputTarget = value;
+                OnPropertyChanged();
+            }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

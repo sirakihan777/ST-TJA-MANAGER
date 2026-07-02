@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,31 +10,111 @@ namespace ST_Fumen_Manager_WPF.Services
 {
     /// <summary>
     /// ESE曲データのGitクローン・更新を管理するサービス。
-    /// 操作対象は必ず専用キャッシュフォルダのみ。
-    /// ユーザーの本番Songsフォルダには一切触れない。
+    /// 操作対象はユーザーが選択したESE clone先フォルダに限定する。
     /// </summary>
     public static class GitSongSourceService
     {
         // --- パス定義 ---
 
         /// <summary>
-        /// キャッシュルート: %APPDATA%\ST-TJA-MANAGER\Cache\ESE
+        /// 既定の clone 親フォルダ: %APPDATA%\SirakinTaikoData
         ///
-        /// 実際のパス例: C:\Users\morit\AppData\Roaming\ST-TJA-MANAGER\Cache\ESE
+        /// 実際のパス例: C:\Users\morit\AppData\Roaming\SirakinTaikoData
         /// </summary>
-        public static string CacheRoot =>
+        public static string DefaultCacheRoot =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ST-TJA-MANAGER", "Cache", "ESE");
+                "SirakinTaikoData");
 
         /// <summary>
-        /// Songs フォルダ: %APPDATA%\ST-TJA-MANAGER\Cache\ESE\Songs
-        ///
-        /// git clone の出力先。ユーザーの本番 Songs とは別の専用キャッシュ。
+        /// 既定の clone 先: %APPDATA%\SirakinTaikoData\Songs
         /// </summary>
-        public static string SongsPath => Path.Combine(CacheRoot, "Songs");
+        public static string DefaultSongsPath => Path.Combine(DefaultCacheRoot, "Songs");
+
+        /// <summary>
+        /// git clone の出力先。
+        /// 既定は専用キャッシュだが、UIから任意のフォルダに変更できる。
+        /// </summary>
+        public static string SongsPath { get; private set; } = LoadConfiguredSongsPath();
+
+        /// <summary>
+        /// 現在の clone 先の親フォルダ。
+        /// clone 実行時の working directory として使う。
+        /// </summary>
+        public static string CacheRoot =>
+            Path.GetDirectoryName(Path.GetFullPath(SongsPath)) ?? DefaultCacheRoot;
 
         private const string RemoteUrl = "https://ese.tjadataba.se/ESE/ESE.git";
+        private static string ConfigFilePath =>
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "ST-TJA-MANAGER", "git_songs_path.txt");
+
+        public static void SetSongsPath(string songsPath)
+        {
+            string normalized = NormalizeSongsPath(songsPath);
+            SongsPath = normalized;
+            SaveConfiguredSongsPath(normalized);
+        }
+
+        public static void ResetSongsPathToDefault()
+        {
+            SongsPath = DefaultSongsPath;
+            SaveConfiguredSongsPath(SongsPath);
+        }
+
+        private static string LoadConfiguredSongsPath()
+        {
+            try
+            {
+                if (File.Exists(ConfigFilePath))
+                {
+                    string path = File.ReadAllText(ConfigFilePath, Encoding.UTF8).Trim();
+                    if (!string.IsNullOrWhiteSpace(path))
+                        return NormalizeSongsPath(path);
+                }
+            }
+            catch
+            {
+                // 設定が壊れている場合は既定値へ戻す。
+            }
+
+            return DefaultSongsPath;
+        }
+
+        private static void SaveConfiguredSongsPath(string songsPath)
+        {
+            try
+            {
+                string? dir = Path.GetDirectoryName(ConfigFilePath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(ConfigFilePath, songsPath, Encoding.UTF8);
+            }
+            catch
+            {
+                // 保存失敗はGit取得自体を止める理由にしない。
+            }
+        }
+
+        private static string NormalizeSongsPath(string songsPath)
+        {
+            if (string.IsNullOrWhiteSpace(songsPath))
+                throw new ArgumentException("Git取得先フォルダが空です。");
+
+            string full = Path.GetFullPath(songsPath.Trim());
+            string root = Path.GetPathRoot(full) ?? "";
+            string trimmedFull = TrimTrailingSeparators(full);
+            string trimmedRoot = TrimTrailingSeparators(root);
+
+            if (string.Equals(trimmedFull, trimmedRoot, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("ドライブ直下はGit取得先に指定できません。");
+
+            return trimmedFull;
+        }
+
+        private static string TrimTrailingSeparators(string path)
+            => path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         // --- Songsフォルダの状態 ---
 
@@ -54,6 +135,15 @@ namespace ST_Fumen_Manager_WPF.Services
         public static SongsState CheckSongsState()
         {
             if (!Directory.Exists(SongsPath)) return SongsState.NotExist;
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(SongsPath).Any())
+                    return SongsState.NotExist;
+            }
+            catch
+            {
+                return SongsState.PartialOrBroken;
+            }
             if (!Directory.Exists(Path.Combine(SongsPath, ".git"))) return SongsState.PartialOrBroken;
 
             // .git は存在するが中身が壊れていないか実際に git で確認
@@ -122,16 +212,15 @@ namespace ST_Fumen_Manager_WPF.Services
         }
 
         /// <summary>
-        /// Songs フォルダ (%APPDATA%... 配下のみ) を削除する。
-        /// 安全チェックを行い、キャッシュ外であれば絶対に削除しない。
+        /// 中途半端または破損した clone 先フォルダを削除する。
+        /// 呼び出し側でユーザー確認済みであることを前提に、最低限の危険パス防止を行う。
         /// </summary>
         public static void DeletePartialSongsFolder(Action<string> log)
         {
             string fullSongs = Path.GetFullPath(SongsPath);
-            string fullCache = Path.GetFullPath(CacheRoot);
-            if (!fullSongs.StartsWith(fullCache, StringComparison.OrdinalIgnoreCase))
+            if (IsDangerousDeleteTarget(fullSongs))
             {
-                log("[ERROR] 安全チェック失敗: 削除対象がキャッシュ外のため中止しました。");
+                log("[ERROR] 安全チェック失敗: 削除対象として危険なパスのため中止しました。");
                 return;
             }
 
@@ -150,7 +239,7 @@ namespace ST_Fumen_Manager_WPF.Services
         /// ESEをクローンまたは更新する。
         /// ログはコールバックで逐次通知する。
         /// 進捗 (\r 区切りも含む) は onProgress コールバックで最新1行を通知する。
-        /// 操作は必ず SongsPath (専用キャッシュ) のみに限定する。
+        /// 操作は必ず選択された clone 先フォルダに限定する。
         /// </summary>
         /// <param name="log">確定ログ行の通知コールバック</param>
         /// <param name="onProgress">最新進捗の通知コールバック (ステータス欄用)</param>
@@ -167,7 +256,7 @@ namespace ST_Fumen_Manager_WPF.Services
                 return false;
             }
 
-            log($"[INFO] キャッシュ先: {SongsPath}");
+            log($"[INFO] Git取得先: {SongsPath}");
 
             Directory.CreateDirectory(CacheRoot);
 
@@ -199,12 +288,15 @@ namespace ST_Fumen_Manager_WPF.Services
         {
             log("[INFO] ESEリポジトリが未取得です。shallow clone を開始します...");
             log("[INFO] 初回cloneはリポジトリのサイズによって数分〜10分以上かかる場合があります。");
-            log($"[INFO] コマンド: git clone --depth=1 --no-tags --single-branch {RemoteUrl} Songs");
+            string cloneTargetName = Path.GetFileName(SongsPath);
+            string cloneArguments =
+                $"clone --depth=1 --no-tags --single-branch {QuoteArgument(RemoteUrl)} {QuoteArgument(cloneTargetName)}";
+            log($"[INFO] コマンド: git {cloneArguments}");
             log($"[INFO] 実行場所: {CacheRoot}");
 
             bool ok = await RunGitWithProgressAsync(
                 CacheRoot,
-                $"clone --depth=1 --no-tags --single-branch {RemoteUrl} Songs",
+                cloneArguments,
                 log, onProgress, ct);
 
             if (ct.IsCancellationRequested)
@@ -276,11 +368,38 @@ namespace ST_Fumen_Manager_WPF.Services
 
         // --- 内部実装 ---
 
+        private static bool IsDangerousDeleteTarget(string path)
+        {
+            string full = TrimTrailingSeparators(Path.GetFullPath(path));
+            string root = TrimTrailingSeparators(Path.GetPathRoot(full) ?? "");
+
+            if (string.IsNullOrWhiteSpace(full)) return true;
+            if (string.Equals(full, root, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(full, TrimTrailingSeparators(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(full, TrimTrailingSeparators(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)), StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
+        }
+
+        private static bool IsPathInsideOrSame(string path, string parent)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string fullParent = Path.GetFullPath(parent);
+            string relative = Path.GetRelativePath(fullParent, fullPath);
+
+            return relative == "."
+                || (!relative.StartsWith("..", StringComparison.Ordinal)
+                    && !Path.IsPathRooted(relative));
+        }
+
+        private static string QuoteArgument(string argument)
+            => "\"" + argument.Replace("\"", "\\\"") + "\"";
+
         /// <summary>
         /// Gitコマンドを非同期実行し、stdout/stderr を char[] バッファで読み取る。
         /// \r 区切りの Git 進捗行も拾って onProgress に通知する。
         /// \n または \r\n で終わる行はログに出す。
-        /// workingDir は必ず CacheRoot 以下であることを検証する。
+        /// workingDir は必ず現在の clone 先フォルダ、またはその親フォルダであることを検証する。
         /// </summary>
         private static async Task<bool> RunGitWithProgressAsync(
             string workingDir,
@@ -289,12 +408,17 @@ namespace ST_Fumen_Manager_WPF.Services
             Action<string>? onProgress,
             CancellationToken ct)
         {
-            // 安全性確認: 操作先が必ず CacheRoot 配下であること
+            // 安全性確認: clone親またはclone先以外ではGitを実行しない。
             string fullWorking = Path.GetFullPath(workingDir);
             string fullCache = Path.GetFullPath(CacheRoot);
-            if (!fullWorking.StartsWith(fullCache, StringComparison.OrdinalIgnoreCase))
+            string fullSongs = Path.GetFullPath(SongsPath);
+            bool allowedWorkingDir =
+                string.Equals(TrimTrailingSeparators(fullWorking), TrimTrailingSeparators(fullCache), StringComparison.OrdinalIgnoreCase)
+                || IsPathInsideOrSame(fullWorking, fullSongs);
+
+            if (!allowedWorkingDir)
             {
-                log($"[ERROR] 安全チェック失敗: '{workingDir}' は専用キャッシュ外のパスです。操作を中止しました。");
+                log($"[ERROR] 安全チェック失敗: '{workingDir}' は選択されたGit取得先外のパスです。操作を中止しました。");
                 return false;
             }
 

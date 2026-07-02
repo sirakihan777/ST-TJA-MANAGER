@@ -37,6 +37,7 @@ namespace ST_Fumen_Manager_WPF
             DataContext = this;
             CourseDataGrid.ItemsSource = CourseItems;
             StfdbDataGrid.ItemsSource = StfdbEntries;
+            TxtGitCloneFolder.Text = GitSongSourceService.SongsPath;
 
             // RunSanityCheck を安全化（例外を吸収してアプリ起動を妨げない）
             try
@@ -439,6 +440,7 @@ namespace ST_Fumen_Manager_WPF
 
         // 照合結果を保持する
         private List<OfficialMatchResult> _officialMatchResults = new();
+        private bool _syncingOfficialOutputTargets;
 
         // プレビュー時に読み込んだTJA情報を保持する
         private List<TjaInfo> _tjaInfos = new();
@@ -459,6 +461,66 @@ namespace ST_Fumen_Manager_WPF
                 TxtOfficialLog.Text = string.Join("\n", _logLines);
                 OfficialLogScroll.ScrollToBottom();
             });
+        }
+
+        private void OfficialOutputTarget_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_syncingOfficialOutputTargets) return;
+            if (sender is not ComboBox comboBox) return;
+            if (comboBox.DataContext is not OfficialMatchResult changed) return;
+            if (string.IsNullOrEmpty(changed.OfficialSongKey)
+                || string.IsNullOrEmpty(changed.CandidateKey))
+                return;
+
+            try
+            {
+                _syncingOfficialOutputTargets = true;
+
+                foreach (var result in _officialMatchResults.Where(r =>
+                    r.IsOutputTargetSelectable
+                    && string.Equals(r.OfficialSongKey, changed.OfficialSongKey, StringComparison.Ordinal)))
+                {
+                    bool sameCandidate = string.Equals(
+                        result.CandidateKey, changed.CandidateKey, StringComparison.OrdinalIgnoreCase);
+
+                    if (sameCandidate)
+                    {
+                        result.OutputTarget = changed.OutputTarget;
+                    }
+                    else if (changed.OutputTarget == OfficialOutputTarget.Official
+                             && result.OutputTarget == OfficialOutputTarget.Official)
+                    {
+                        result.OutputTarget = OfficialOutputTarget.Unclassified;
+                    }
+                }
+            }
+            finally
+            {
+                _syncingOfficialOutputTargets = false;
+            }
+
+            RefreshOfficialSummary();
+        }
+
+        private void RefreshOfficialSummary()
+        {
+            int ok = _officialMatchResults.Count(r => r.Status == MatchStatus.OK);
+            int warn = _officialMatchResults.Count(r => r.Status == MatchStatus.Warning);
+            int unmatched = _officialMatchResults.Count(r => r.Status == MatchStatus.Unmatched);
+            int dup = _officialMatchResults.Count(r => r.Status == MatchStatus.Duplicate);
+            int officialSelected = _officialMatchResults.Count(r =>
+                r.OutputTarget == OfficialOutputTarget.Official
+                && (r.Status == MatchStatus.OK || r.Status == MatchStatus.Warning));
+            int unclassifiedSelected = _officialMatchResults
+                .Where(r => r.OutputTarget == OfficialOutputTarget.Unclassified
+                         && !string.IsNullOrEmpty(r.TjaPath))
+                .Select(r => r.TjaPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+
+            TxtOfficialSummary.Text =
+                $"OK: {ok}  Warning: {warn}  Unmatched: {unmatched}  Duplicate: {dup}  " +
+                $"公式出力選択: {officialSelected}  未分類選択: {unclassifiedSelected}  合計: {_officialMatchResults.Count}";
         }
 
         private void SetOfficialStatus(string text, string hexColor = "#A6A6A6")
@@ -485,19 +547,63 @@ namespace ST_Fumen_Manager_WPF
             });
         }
 
+        /// <summary>Git取得先フォルダ 参照...</summary>
+        private void BtnGitCloneFolderBrowse_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = "ESEリポジトリのGit取得先フォルダを選択してください",
+                InitialDirectory = string.IsNullOrEmpty(TxtGitCloneFolder.Text)
+                    ? GitSongSourceService.DefaultSongsPath
+                    : TxtGitCloneFolder.Text
+            };
+
+            if (dialog.ShowDialog() == true)
+                TxtGitCloneFolder.Text = dialog.FolderName;
+        }
+
+        /// <summary>Git取得先フォルダを既定値へ戻す</summary>
+        private void BtnGitCloneFolderDefault_Click(object sender, RoutedEventArgs e)
+        {
+            GitSongSourceService.ResetSongsPathToDefault();
+            TxtGitCloneFolder.Text = GitSongSourceService.SongsPath;
+        }
+
+        private bool TryApplyGitCloneFolderFromUi()
+        {
+            try
+            {
+                GitSongSourceService.SetSongsPath(TxtGitCloneFolder.Text);
+                TxtGitCloneFolder.Text = GitSongSourceService.SongsPath;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Git取得先フォルダが無効です。\n\n{ex.Message}",
+                    "確認",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return false;
+            }
+        }
+
         /// <summary>Git曲データ取得/更新 ボタン</summary>
         private async void BtnGitFetch_Click(object sender, RoutedEventArgs e)
         {
+            if (!TryApplyGitCloneFolderFromUi())
+                return;
+
             // 中途半端なフォルダ確認
             var state = GitSongSourceService.CheckSongsState();
             if (state == GitSongSourceService.SongsState.PartialOrBroken)
             {
                 var dlgResult = MessageBox.Show(
-                    $"Songs フォルダが存在しますが .git がありません (中途半端な状態)。\n\n" +
+                    $"Git取得先フォルダが存在しますが、有効なESEリポジトリではありません。\n\n" +
                     $"{GitSongSourceService.SongsPath}\n\n" +
                     "このフォルダを削除してから再cloneしますか？\n" +
-                    "(キャッシュフォルダのみ削除します。本番Songsフォルダには影響しません)",
-                    "中途半端なフォルダを検出",
+                    "選択したフォルダ内のファイルは削除されます。",
+                    "Git取得先フォルダを確認",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
 
@@ -507,7 +613,7 @@ namespace ST_Fumen_Manager_WPF
                     return;
                 }
 
-                AppendOfficialLog("[INFO] 中途半端な Songs フォルダを削除します...");
+                AppendOfficialLog("[INFO] 中途半端なGit取得先フォルダを削除します...");
                 await Task.Run(() =>
                     GitSongSourceService.DeletePartialSongsFolder(line => AppendOfficialLog(line)));
             }
@@ -520,6 +626,8 @@ namespace ST_Fumen_Manager_WPF
 
             BtnGitFetch.IsEnabled = false;
             BtnGitCancel.IsEnabled = true;
+            BtnGitCloneFolderBrowse.IsEnabled = false;
+            BtnGitCloneFolderDefault.IsEnabled = false;
             _logLines.Clear();
             TxtOfficialLog.Text = "";
             TxtGitElapsed.Text = "";
@@ -596,6 +704,8 @@ namespace ST_Fumen_Manager_WPF
                 {
                     BtnGitFetch.IsEnabled = true;
                     BtnGitCancel.IsEnabled = false;
+                    BtnGitCloneFolderBrowse.IsEnabled = true;
+                    BtnGitCloneFolderDefault.IsEnabled = true;
                 });
                 _gitCts?.Dispose();
                 _gitCts = null;
@@ -737,7 +847,7 @@ namespace ST_Fumen_Manager_WPF
                             {
                                 SongClassificationService.Classification.Official => "通常公式曲",
                                 SongClassificationService.Classification.Goodbye => "サヨナラ曲",
-                                SongClassificationService.Classification.ConsumerCandidate => "CS版限定候補",
+                                SongClassificationService.Classification.ConsumerCandidate => "CS限定楽曲",
                                 _ => "未分類"
                             };
                             r.ClassificationReason = cls.Reason;
@@ -756,14 +866,7 @@ namespace ST_Fumen_Manager_WPF
 
                 _officialMatchResults = results;
                 OfficialPreviewGrid.ItemsSource = _officialMatchResults;
-
-                int ok = results.Count(r => r.Status == MatchStatus.OK);
-                int warn = results.Count(r => r.Status == MatchStatus.Warning);
-                int unmatched = results.Count(r => r.Status == MatchStatus.Unmatched);
-                int dup = results.Count(r => r.Status == MatchStatus.Duplicate);
-
-                string summary = $"OK: {ok}  Warning: {warn}  Unmatched: {unmatched}  Duplicate: {dup}  合計: {results.Count}";
-                TxtOfficialSummary.Text = summary;
+                RefreshOfficialSummary();
                 SetOfficialStatus("照合完了", "#2EA043");
             }
             catch (Exception ex)
@@ -797,15 +900,28 @@ namespace ST_Fumen_Manager_WPF
             bool generateGoodbye = ChkGenerateGoodbye.IsChecked == true;
             bool generateConsumerCandidate = ChkGenerateConsumerCandidate.IsChecked == true;
 
-            int okCount = _officialMatchResults.Count(r => r.Status == MatchStatus.OK);
-            int warnCount = _officialMatchResults.Count(r => r.Status == MatchStatus.Warning);
-            string warnMsg = includeWarnings ? $"\nWarning({warnCount}件)も含めます。" : $"\nWarning({warnCount}件)は除外します。";
+            int officialOkCount = _officialMatchResults.Count(r =>
+                r.OutputTarget == OfficialOutputTarget.Official
+                && r.Status == MatchStatus.OK);
+            int officialWarnCount = _officialMatchResults.Count(r =>
+                r.OutputTarget == OfficialOutputTarget.Official
+                && r.Status == MatchStatus.Warning);
+            int forcedUnclassifiedCount = _officialMatchResults
+                .Where(r => r.OutputTarget == OfficialOutputTarget.Unclassified
+                         && !string.IsNullOrEmpty(r.TjaPath))
+                .Select(r => r.TjaPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            string warnMsg = includeWarnings
+                ? $"\n公式選択中のWarning({officialWarnCount}件)も含めます。"
+                : $"\n公式選択中のWarning({officialWarnCount}件)は除外します。";
 
             var confirm = MessageBox.Show(
                 $"official.stfdb を生成します。\n" +
                 $"出力先: {destFolder}\n" +
-                $"OK: {okCount} 曲{warnMsg}\n" +
-                $"(サヨナラ曲/CS版限定候補は未マッチのTJAから分類して出力します)\n\n" +
+                $"公式出力選択OK: {officialOkCount} 曲{warnMsg}\n" +
+                $"10 未分類選択: {forcedUnclassifiedCount} TJA\n" +
+                $"(サヨナラ曲/CS限定楽曲は未マッチのTJAから分類して出力します)\n\n" +
                 $"既存の official.stfdb は .bak にバックアップされます。\n続行しますか？",
                 "生成確認",
                 MessageBoxButton.YesNo,

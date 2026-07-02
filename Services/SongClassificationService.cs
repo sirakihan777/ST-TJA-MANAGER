@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ST_Fumen_Manager_WPF.Models;
 
 namespace ST_Fumen_Manager_WPF.Services
 {
     /// <summary>
-    /// TJA曲を公式Database / サヨナラ曲 / CS版限定候補 / 未分類 に分類するサービス。
+    /// TJA曲を公式Database / サヨナラ曲 / CS限定楽曲 / 未分類 に分類するサービス。
     /// </summary>
     public static class SongClassificationService
     {
@@ -86,7 +87,7 @@ namespace ST_Fumen_Manager_WPF.Services
                 };
             }
 
-            // 3. CS版限定候補照合
+            // 3. CS限定楽曲照合
             // ナムコ公式AC songlistに存在しない曲のうち、CS版作品ページに存在する曲
             if (inConsumer)
             {
@@ -97,7 +98,7 @@ namespace ST_Fumen_Manager_WPF.Services
                     MatchedWorkTitle = consumerMatch.WorkTitle,
                     Reason = "CS版作品ページに存在し、公式AC songlistには未一致",
                     Source = Source.WikiConsumer,
-                    Message = $"CS版限定候補: {consumerMatch.WorkTitle} / {consumerMatch.Title}"
+                    Message = $"CS限定楽曲: {consumerMatch.WorkTitle} / {consumerMatch.Title}"
                 };
             }
 
@@ -135,6 +136,18 @@ namespace ST_Fumen_Manager_WPF.Services
             return string.Join(",", attrs);
         }
 
+        public static bool TryMatchGoodbye(
+            TjaInfo tja,
+            IReadOnlyCollection<GoodbyeSongRecord> goodbyeSongs,
+            out GoodbyeSongRecord? match)
+            => IsInGoodbye(tja, goodbyeSongs, out match);
+
+        public static bool TryMatchConsumer(
+            TjaInfo tja,
+            IReadOnlyCollection<ConsumerSongRecord> consumerSongs,
+            out ConsumerSongRecord? match)
+            => IsInConsumer(tja, consumerSongs, out match);
+
         /// <summary>
         /// 複数のTJA情報を一括分類する。
         /// </summary>
@@ -160,22 +173,43 @@ namespace ST_Fumen_Manager_WPF.Services
             IReadOnlyCollection<OfficialSongRecord> officialSongs,
             out OfficialSongRecord? match)
         {
-            string nt = TitleNormalizer.NormalizeTitle(tja.Title);
+            string nt = TitleNormalizer.NormalizeTitleForOfficialMatch(tja.Title);
             string ns = TitleNormalizer.NormalizeSubtitle(tja.Subtitle);
 
             match = officialSongs.FirstOrDefault(r =>
-                r.NormalizedTitle == nt && r.NormalizedSubtitle == ns);
+                NormalizeOfficialTitleForLookup(r.Title) == nt
+                && r.NormalizedSubtitle == ns);
             if (match == null && !string.IsNullOrEmpty(ns))
             {
                 match = officialSongs.FirstOrDefault(r =>
-                    r.NormalizedTitle == nt && string.IsNullOrEmpty(r.NormalizedSubtitle));
+                    NormalizeOfficialTitleForLookup(r.Title) == nt
+                    && string.IsNullOrEmpty(r.NormalizedSubtitle));
             }
             if (match == null)
             {
-                match = officialSongs.FirstOrDefault(r => r.NormalizedTitle == nt);
+                match = officialSongs.FirstOrDefault(r => NormalizeOfficialTitleForLookup(r.Title) == nt);
             }
 
             return match != null;
+        }
+
+        private static string NormalizeOfficialTitleForLookup(string title)
+            => TitleNormalizer.NormalizeTitleForOfficialMatch(RemoveDoublePlayPrefix(title));
+
+        private static string RemoveDoublePlayPrefix(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return title;
+
+            string work = title.Trim();
+            string stripped = Regex.Replace(
+                work,
+                @"^\s*(?:【\s*双打\s*】|［\s*双打\s*］|\[\s*双打\s*\]|\(\s*双打\s*\)|（\s*双打\s*）)\s*",
+                "",
+                RegexOptions.CultureInvariant);
+
+            return string.Equals(stripped, work, StringComparison.Ordinal)
+                ? title
+                : stripped.Trim();
         }
 
         private static bool IsInGoodbye(
