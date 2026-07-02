@@ -11,12 +11,25 @@ namespace ST_Fumen_Manager_WPF.Services
     public static class TitleNormalizer
     {
         /// <summary>
+        /// 大文字・小文字が意味を持つ既知のTITLE。
+        /// これらのTITLEは NormalizeTitle で大文字小文字を保持する。
+        /// </summary>
+        private static readonly HashSet<string> CaseSensitiveTitles = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ALiVE",
+            "ALIVE",
+        };
+
+        /// <summary>
         /// TITLEを正規化する。
         /// 全角→半角、記号除去、大文字化、スペース除去を行う。
+        /// 一部のTITLE（ALiVE/ALIVE等）は大文字小文字を保持する。
         /// </summary>
         public static string NormalizeTitle(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+
+            bool preserveCase = CaseSensitiveTitles.Contains(s.Trim());
 
             var sb = new StringBuilder();
             foreach (var c in s.Normalize(NormalizationForm.FormKC))
@@ -50,7 +63,7 @@ namespace ST_Fumen_Manager_WPF.Services
 
                 sb.Append(work);
             }
-            return sb.ToString().ToUpperInvariant();
+            return preserveCase ? sb.ToString() : sb.ToString().ToUpperInvariant();
         }
 
         /// <summary>

@@ -547,6 +547,10 @@
                                 Margin="0,0,16,0" Padding="14,7"/>
                         <CheckBox x:Name="ChkIncludeWarning" Content="Warningも出力する"
                                   VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
+                        <CheckBox x:Name="ChkGenerateGoodbye" Content="サヨナラ曲フォルダも生成"
+                                  VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
+                        <CheckBox x:Name="ChkGenerateConsumerCandidate" Content="CS版限定候補フォルダも生成"
+                                  VerticalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,16,0"/>
                         <TextBlock x:Name="TxtOfficialStatus" VerticalAlignment="Center"
                                    Foreground="#A6A6A6" FontSize="12"/>
                     </StackPanel>
@@ -606,6 +610,10 @@
                                 <DataGridTextColumn Header="TJA TITLE" Binding="{Binding TjaTitle}" Width="180" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="TJA SUBTITLE" Binding="{Binding TjaSubtitle}" Width="130" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="TJAパス" Binding="{Binding TjaPath}" Width="*" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="分類" Binding="{Binding Classification}" Width="110" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="分類理由" Binding="{Binding ClassificationReason}" Width="220" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="分類ソース" Binding="{Binding ClassificationSource}" Width="110" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="属性" Binding="{Binding Attributes}" Width="110" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="生成先STFDB" Binding="{Binding DestinationStfdb}" Width="180" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="マッチ方式" Binding="{Binding MatchMethodText}" Width="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="メッセージ" Binding="{Binding Message}" Width="200" IsReadOnly="True"/>

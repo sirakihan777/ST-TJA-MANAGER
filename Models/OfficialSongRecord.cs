@@ -79,6 +79,12 @@ namespace ST_Fumen_Manager_WPF.Models
         public string MatchMethodText { get; set; } = "";
         public string Message { get; set; } = "";
 
+        // --- 分類結果 ---
+        public string Classification { get; set; } = "";
+        public string ClassificationReason { get; set; } = "";
+        public string ClassificationSource { get; set; } = "";
+        public string Attributes { get; set; } = "";
+
         public MatchStatus Status
         {
             get => _status;

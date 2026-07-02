@@ -299,6 +299,10 @@ namespace ST_Fumen_Manager_WPF.Services
             }
 
             Process? process = null;
+            // プロセス終了やキャンセルによってストリーム読み取りを即座に止めるための CTS
+            using var readCts = new CancellationTokenSource();
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, readCts.Token);
+
             try
             {
                 var psi = new ProcessStartInfo
@@ -320,50 +324,40 @@ namespace ST_Fumen_Manager_WPF.Services
                 process = new Process { StartInfo = psi };
                 process.Start();
 
-                var proc = process; // ラムダキャプチャ用
+                var proc = process;
 
-                // stdout と stderr を並行して非同期読み取り
-                var stdoutTask = ReadStreamWithProgressAsync(proc.StandardOutput, log, onProgress, ct);
-                var stderrTask = ReadStreamWithProgressAsync(proc.StandardError, log, onProgress, ct);
+                // stdout と stderr を並行して非同期読み取り (linkedCts でキャンセル可能にする)
+                var stdoutTask = ReadStreamWithProgressAsync(proc.StandardOutput, log, onProgress, linkedCts.Token);
+                var stderrTask = ReadStreamWithProgressAsync(proc.StandardError, log, onProgress, linkedCts.Token);
 
-                // プロセス終了を非同期待機 (最大10分)
-                var exitTask = Task.Run(() => proc.WaitForExit(600_000), CancellationToken.None);
+                // プロセスの非同期終了待ち (最大10分)
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+                using var exitCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-                // キャンセル監視タスク
-                var cancelWatchTask = Task.Run(async () =>
+                try
                 {
-                    while (true)
+                    await proc.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // タイムアウトまたはキャンセル時の Kill 処理
+                    try
                     {
-                        bool cancelled = ct.IsCancellationRequested;
-                        bool exited = false;
-                        try { exited = proc.HasExited; } catch { exited = true; }
-
-                        if (cancelled && !exited)
-                        {
-                            // 2段階Kill: entireProcessTree → 単体Kill
-                            try
-                            {
-                                proc.Kill(entireProcessTree: true);
-                            }
-                            catch (System.ComponentModel.Win32Exception)
-                            {
-                                try { proc.Kill(); } catch { }
-                            }
-                            catch (InvalidOperationException)
-                            {
-                                // Kill前にプロセスが終了したレース → 無視
-                            }
-                            catch { }
-                            break;
-                        }
-
-                        if (exited) break;
-
-                        await Task.Delay(200, CancellationToken.None);
+                        proc.Kill(entireProcessTree: true);
                     }
-                }, CancellationToken.None);
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                        try { proc.Kill(); } catch { }
+                    }
+                    catch (InvalidOperationException) { }
+                    catch { }
+                }
 
-                await Task.WhenAll(stdoutTask, stderrTask, exitTask, cancelWatchTask);
+                // プロセスが完了したので、ストリーム読み取りも停止させる
+                readCts.Cancel();
+
+                // ストリーム読み取りタスクの完了を待つ (安全のため WhenAny + Delay)
+                await Task.WhenAny(Task.WhenAll(stdoutTask, stderrTask), Task.Delay(1000)).ConfigureAwait(false);
 
                 if (ct.IsCancellationRequested)
                     return false;
@@ -400,13 +394,14 @@ namespace ST_Fumen_Manager_WPF.Services
             CancellationToken ct)
         {
             var buf = new char[4096];
+            var mem = new Memory<char>(buf);
             var lineBuffer = new StringBuilder();
 
             try
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    int read = await reader.ReadAsync(buf, 0, buf.Length).ConfigureAwait(false);
+                    int read = await reader.ReadAsync(mem, ct).ConfigureAwait(false);
                     if (read == 0) break; // EOF
 
                     for (int i = 0; i < read; i++)
@@ -465,7 +460,7 @@ namespace ST_Fumen_Manager_WPF.Services
             }
             catch
             {
-                // ストリームが閉じられた場合は正常終了扱い
+                // ストリームが閉じられた、またはキャンセルされた場合は正常終了扱い
             }
         }
     }

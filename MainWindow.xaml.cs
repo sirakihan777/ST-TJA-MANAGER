@@ -440,6 +440,9 @@ namespace ST_Fumen_Manager_WPF
         // 照合結果を保持する
         private List<OfficialMatchResult> _officialMatchResults = new();
 
+        // プレビュー時に読み込んだTJA情報を保持する
+        private List<TjaInfo> _tjaInfos = new();
+
         // Git取得のキャンセルトークンソース
         private CancellationTokenSource? _gitCts;
 
@@ -711,12 +714,44 @@ namespace ST_Fumen_Manager_WPF
                 await Task.Run(() =>
                 {
                     AppendOfficialLog($"[INFO] TJA読み込み: {srcFolder}");
-                    var tjaInfos = OfficialSongMatcher.ReadTjaInfos(srcFolder,
+                    _tjaInfos = OfficialSongMatcher.ReadTjaInfos(srcFolder,
                         line => AppendOfficialLog(line));
 
-                    AppendOfficialLog($"[INFO] 照合開始: Database={database.Count}曲 / TJA={tjaInfos.Count}件");
-                    results = OfficialSongMatcher.Match(database, tjaInfos, destFolder,
+                    AppendOfficialLog($"[INFO] 照合開始: Database={database.Count}曲 / TJA={_tjaInfos.Count}件");
+                    results = OfficialSongMatcher.Match(database, _tjaInfos, destFolder,
                         line => AppendOfficialLog(line));
+
+                    // 分類情報を付与
+                    AppendOfficialLog("[INFO] 分類情報を読み込み中...");
+                    var goodbyeSongs = GoodbyeSongListService.LoadFromCache();
+                    var consumerSongs = ConsumerSongListService.LoadFromCache();
+                    var classified = SongClassificationService.ClassifyAll(
+                        _tjaInfos, database, goodbyeSongs, consumerSongs);
+
+                    foreach (var r in results)
+                    {
+                        if (string.IsNullOrEmpty(r.TjaPath)) continue;
+                        if (classified.TryGetValue(r.TjaPath, out var cls))
+                        {
+                            r.Classification = cls.Kind switch
+                            {
+                                SongClassificationService.Classification.Official => "通常公式曲",
+                                SongClassificationService.Classification.Goodbye => "サヨナラ曲",
+                                SongClassificationService.Classification.ConsumerCandidate => "CS版限定候補",
+                                _ => "未分類"
+                            };
+                            r.ClassificationReason = cls.Reason;
+                            r.ClassificationSource = cls.Source;
+                        }
+
+                        var tja = _tjaInfos.FirstOrDefault(t =>
+                            string.Equals(t.FilePath, r.TjaPath, StringComparison.OrdinalIgnoreCase));
+                        if (tja != null)
+                        {
+                            r.Attributes = SongClassificationService.GetAttributes(
+                                tja, database, goodbyeSongs, consumerSongs);
+                        }
+                    }
                 });
 
                 _officialMatchResults = results;
@@ -759,6 +794,8 @@ namespace ST_Fumen_Manager_WPF
             }
 
             bool includeWarnings = ChkIncludeWarning.IsChecked == true;
+            bool generateGoodbye = ChkGenerateGoodbye.IsChecked == true;
+            bool generateConsumerCandidate = ChkGenerateConsumerCandidate.IsChecked == true;
 
             int okCount = _officialMatchResults.Count(r => r.Status == MatchStatus.OK);
             int warnCount = _officialMatchResults.Count(r => r.Status == MatchStatus.Warning);
@@ -767,7 +804,8 @@ namespace ST_Fumen_Manager_WPF
             var confirm = MessageBox.Show(
                 $"official.stfdb を生成します。\n" +
                 $"出力先: {destFolder}\n" +
-                $"OK: {okCount} 曲{warnMsg}\n\n" +
+                $"OK: {okCount} 曲{warnMsg}\n" +
+                $"(サヨナラ曲/CS版限定候補は未マッチのTJAから分類して出力します)\n\n" +
                 $"既存の official.stfdb は .bak にバックアップされます。\n続行しますか？",
                 "生成確認",
                 MessageBoxButton.YesNo,
@@ -782,17 +820,20 @@ namespace ST_Fumen_Manager_WPF
             {
                 int generated = 0;
 
-                await Task.Run(() =>
+                await Task.Run(async () =>
                 {
-                    generated = OfficialStfdbGenerator.GenerateAll(
+                    generated = await ClassifiedStfdbGenerator.GenerateAllAsync(
                         _officialMatchResults,
                         destFolder,
                         includeWarnings,
+                        _tjaInfos,
+                        generateGoodbye,
+                        generateConsumerCandidate,
                         line => AppendOfficialLog(line));
                 });
 
-                SetOfficialStatus($"生成完了: {generated} ジャンル", "#2EA043");
-                MessageBox.Show($"{generated} ジャンルの official.stfdb を生成しました。", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                SetOfficialStatus($"生成完了: {generated} フォルダ", "#2EA043");
+                MessageBox.Show($"{generated} フォルダの official.stfdb を生成しました。", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
