@@ -71,6 +71,10 @@ namespace ST_Fumen_Manager_WPF.Services
                 var matchGenre = Regex.Match(content, @"(?i)^GENRE\s*:(.*)", RegexOptions.Multiline);
                 if (matchGenre.Success) globalGenre = matchGenre.Groups[1].Value.Trim();
 
+                string globalStage = "";
+                var matchStage = Regex.Match(content, @"(?i)^STAGE\s*:(.*)", RegexOptions.Multiline);
+                if (matchStage.Success) globalStage = matchStage.Groups[1].Value.Trim();
+
                 string globalMaker = "";
                 var matchMaker = Regex.Match(content, @"(?i)^MAKER\s*:(.*)", RegexOptions.Multiline);
                 if (matchMaker.Success) globalMaker = matchMaker.Groups[1].Value.Trim();
@@ -84,6 +88,7 @@ namespace ST_Fumen_Manager_WPF.Services
                     Title = globalTitle,
                     Subtitle = globalSub,
                     Genre = globalGenre,
+                    Stage = globalStage,
                     Maker = globalMaker
                 };
 

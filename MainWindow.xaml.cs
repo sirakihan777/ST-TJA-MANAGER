@@ -18,11 +18,17 @@ namespace ST_Fumen_Manager_WPF
     {
         public ObservableCollection<CourseItem> CourseItems { get; } = new();
         public ObservableCollection<StfdbEntryItem> StfdbEntries { get; } = new();
+        public ObservableCollection<StmdEntryItem> StmdEntries { get; } = new();
 
         public List<string> GenreOptions { get; } = new()
         {
             "ポップス", "キッズ", "アニメ", "ボーカロイド™曲",
             "ゲームミュージック", "バラエティ", "クラシック", "ナムコオリジナル"
+        };
+
+        public List<string> StageOptions { get; } = new()
+        {
+            "", "default", "toho", "miku", "gumi", "ia", "imas"
         };
 
         private string _currentFolderPath = "";
@@ -37,6 +43,7 @@ namespace ST_Fumen_Manager_WPF
             DataContext = this;
             CourseDataGrid.ItemsSource = CourseItems;
             StfdbDataGrid.ItemsSource = StfdbEntries;
+            StmdDataGrid.ItemsSource = StmdEntries;
             TxtGitCloneFolder.Text = GitSongSourceService.SongsPath;
 
             // RunSanityCheck を安全化（例外を吸収してアプリ起動を妨げない）
@@ -75,7 +82,9 @@ namespace ST_Fumen_Manager_WPF
 
             CourseItems.Clear();
             StfdbEntries.Clear();
+            StmdEntries.Clear();
             StfdbComboBox.ItemsSource = null;
+            StmdComboBox.ItemsSource = null;
             UpdateStatus("解析・変換処理中...", "#FFFFFF");
 
             await Task.Run(() =>
@@ -125,15 +134,22 @@ namespace ST_Fumen_Manager_WPF
                     _stfdbFilesList = stfdbFiles;
                     if (_stfdbFilesList.Count > 0)
                     {
-                        StfdbComboBox.ItemsSource = _stfdbFilesList.Select(Path.GetFileName).ToList();
+                        var stfdbNames = _stfdbFilesList.Select(Path.GetFileName).ToList();
+                        StfdbComboBox.ItemsSource = stfdbNames;
                         StfdbComboBox.SelectedIndex = 0;
+                        StmdComboBox.ItemsSource = stfdbNames;
+                        StmdComboBox.SelectedIndex = 0;
                         StfdbStatusText.Text = $"{_stfdbFilesList.Count} 件の STFDB を検出しました";
+                        StmdStatusText.Text = $"{_stfdbFilesList.Count} 件の STMD 対象を検出しました";
                     }
                     else
                     {
                         StfdbComboBox.ItemsSource = new List<string> { "STFDBファイルが見つかりません" };
                         StfdbComboBox.SelectedIndex = 0;
+                        StmdComboBox.ItemsSource = new List<string> { "STFDBファイルが見つかりません" };
+                        StmdComboBox.SelectedIndex = 0;
                         StfdbStatusText.Text = "STFDBファイルが見つかりません";
+                        StmdStatusText.Text = "STMD対象のSTFDBファイルが見つかりません";
                     }
 
                     int errCount = summary.TotalErrorCount;
@@ -409,6 +425,65 @@ namespace ST_Fumen_Manager_WPF
             {
                 StfdbService.ValidateStfdbEntries(StfdbEntries);
             }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void CommitStmdGridEdit()
+        {
+            try
+            {
+                StmdDataGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+                StmdDataGrid.CommitEdit(DataGridEditingUnit.Row, true);
+            }
+            catch { }
+        }
+
+        private void StmdComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            int idx = StmdComboBox.SelectedIndex;
+            if (idx < 0 || _stfdbFilesList.Count == 0 || idx >= _stfdbFilesList.Count)
+            {
+                StmdEntries.Clear();
+                StmdStatusText.Text = "STMD対象がありません";
+                return;
+            }
+
+            string stfdbPath = _stfdbFilesList[idx];
+            var entries = StmdService.LoadStmdForStfdb(stfdbPath);
+
+            StmdEntries.Clear();
+            foreach (var entry in entries)
+            {
+                StmdEntries.Add(entry);
+            }
+
+            string stmdPath = stfdbPath + ".stmd";
+            StmdStatusText.Text = File.Exists(stmdPath)
+                ? $"Status: STMD loaded: {StmdEntries.Count} entries"
+                : $"Status: STMD未作成: {StmdEntries.Count} entries from STFDB/TJA";
+        }
+
+        private void StmdSave_Click(object sender, RoutedEventArgs e)
+        {
+            CommitStmdGridEdit();
+            int idx = StmdComboBox.SelectedIndex;
+            if (idx < 0 || _stfdbFilesList.Count == 0 || idx >= _stfdbFilesList.Count)
+            {
+                MessageBox.Show("保存対象のSTMDがありません。", "確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                string stfdbPath = _stfdbFilesList[idx];
+                StmdService.SaveStmdForStfdb(stfdbPath, StmdEntries);
+                string stmdName = Path.GetFileName(stfdbPath) + ".stmd";
+                UpdateStatus($"STMDを保存しました: {StmdEntries.Count}件 ({stmdName})", "#2EA043");
+                StmdStatusText.Text = $"保存完了: {StmdEntries.Count}件";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"STMD保存に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void StfdbSave_Click(object sender, RoutedEventArgs e)

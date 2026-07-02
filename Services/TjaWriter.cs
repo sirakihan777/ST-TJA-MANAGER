@@ -62,6 +62,7 @@ namespace ST_Fumen_Manager_WPF.Services
             string title = (newData.Title ?? "").Trim();
             string subtitle = (newData.Subtitle ?? "").Trim();
             string genre = (newData.Genre ?? "").Trim();
+            string stage = (newData.Stage ?? "").Trim();
             string maker = (newData.Maker ?? "").Trim();
 
             var lines = new Dictionary<string, string>();
@@ -72,6 +73,7 @@ namespace ST_Fumen_Manager_WPF.Services
                 lines["SUBTITLE"] = $"SUBTITLE:{subtitle}";
             }
             if (!string.IsNullOrEmpty(genre)) lines["GENRE"] = $"GENRE:{genre}";
+            if (!string.IsNullOrEmpty(stage)) lines["STAGE"] = $"STAGE:{stage}";
             if (!string.IsNullOrEmpty(maker)) lines["MAKER"] = $"MAKER:{maker}";
             return lines;
         }
@@ -93,7 +95,7 @@ namespace ST_Fumen_Manager_WPF.Services
             void InsertMissingCommonHeaders()
             {
                 if (insertedMissingHeader) return;
-                foreach (var key in new[] { "TITLE", "SUBTITLE", "GENRE", "MAKER" })
+                foreach (var key in new[] { "TITLE", "SUBTITLE", "GENRE", "STAGE", "MAKER" })
                 {
                     if (headerKeys.Contains(key) && !seenHeaderKeys.Contains(key))
                     {
@@ -130,7 +132,7 @@ namespace ST_Fumen_Manager_WPF.Services
                     continue;
                 }
 
-                var headerMatch = Regex.Match(trimmed, @"(?i)^(TITLE|SUBTITLE|GENRE|MAKER)\s*:");
+                var headerMatch = Regex.Match(trimmed, @"(?i)^(TITLE|SUBTITLE|GENRE|STAGE|MAKER)\s*:");
                 if (inCommonHeader && headerMatch.Success)
                 {
                     string key = headerMatch.Groups[1].Value.ToUpper();

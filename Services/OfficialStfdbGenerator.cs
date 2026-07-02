@@ -110,6 +110,7 @@ namespace ST_Fumen_Manager_WPF.Services
                             Title = r.OfficialTitle,
                             Subtitle = r.OfficialSubtitle,
                             Genre = r.OfficialGenre,
+                            Stage = "",
                             Order = r.OfficialOrder
                         });
                     }
@@ -203,6 +204,9 @@ namespace ST_Fumen_Manager_WPF.Services
 
             [JsonPropertyName("genre")]
             public string Genre { get; set; } = "";
+
+            [JsonPropertyName("stage")]
+            public string Stage { get; set; } = "";
 
             [JsonPropertyName("order")]
             public int Order { get; set; }

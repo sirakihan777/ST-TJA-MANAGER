@@ -33,6 +33,7 @@ namespace ST_Fumen_Manager_WPF.Models
         private string _title = "";
         private string _subtitle = "";
         private string _genre = "";
+        private string _stage = "";
         private string _maker = "";
         private CourseData? _selectedCourse;
 
@@ -54,6 +55,12 @@ namespace ST_Fumen_Manager_WPF.Models
         {
             get => _genre;
             set { _genre = value; OnPropertyChanged(); }
+        }
+
+        public string Stage
+        {
+            get => _stage;
+            set { _stage = value; OnPropertyChanged(); }
         }
 
         public string Maker
